@@ -1,5 +1,5 @@
 {
-  "name": "Example Plugin",
+  "name": "DS3 SaveBackup",
   "author": "John Doe",
   "flags": ["debug", "_root"],
   "publish": {
