@@ -1,6 +1,8 @@
 lockfileVersion: 5.4
 
 specifiers:
+  '@azure/msal-browser': ^2.32.1
+  '@azure/msal-react': ^1.5.1
   '@rollup/plugin-commonjs': ^21.1.0
   '@rollup/plugin-json': ^4.1.0
   '@rollup/plugin-node-resolve': ^13.3.0
@@ -17,6 +19,8 @@ specifiers:
   typescript: ^4.7.4
 
 dependencies:
+  '@azure/msal-browser': 2.32.1
+  '@azure/msal-react': 1.5.1_@azure+msal-browser@2.32.1
   decky-frontend-lib: 3.6.1
   react-icons: 4.4.0
 
@@ -35,6 +39,31 @@ devDependencies:
   typescript: 4.7.4
 
 packages:
+
+  /@azure/msal-browser/2.32.1:
+    resolution: {integrity: sha512-2G3B12ZEIpiimi6/Yqq7KLk4ud1zZWoHvVd2kJ2VthN1HjMsZjdMUxeHkwMWaQ6RzO6mv9rZiuKmRX64xkXW9g==}
+    engines: {node: '>=0.8.0'}
+    dependencies:
+      '@azure/msal-common': 9.0.1
+    dev: false
+
+  /@azure/msal-common/9.0.1:
+    resolution: {integrity: sha512-eNNHIW/cwPTZDWs9KtYgb1X6gtQ+cC+FGX2YN+t4AUVsBdUbqlMTnUs6/c/VBxC2AAGIhgLREuNnO3F66AN2zQ==}
+    engines: {node: '>=0.8.0'}
+    dev: false
+
+  /@azure/msal-react/1.5.1_@azure+msal-browser@2.32.1:
+    resolution: {integrity: sha512-4R05uUc5x0dHqtHtVGDvQDclOXg/0V1S3PFDnca73UHzlRe+RjeB/zLCY9RbcUiPv8Bdhpvj6KPL54KgaOTdpA==}
+    engines: {node: '>=10'}
+    peerDependencies:
+      '@azure/msal-browser': ^2.32.1
+      react: ^16.8.0 || ^17 || ^18
+    peerDependenciesMeta:
+      react:
+        optional: true
+    dependencies:
+      '@azure/msal-browser': 2.32.1
+    dev: false
 
   /@jridgewell/gen-mapping/0.3.2:
     resolution: {integrity: sha512-mh65xKQAzI6iBcFzwv28KVWSmCkdRBWoOh+bYQGW3+6OZvbbN3TqMGo5hqYxQniRcH9F2VZIoJCm4pa3BPDK/A==}

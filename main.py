@@ -4,6 +4,11 @@ import os.path
 import shutil
 import json
 import datetime
+import sys
+
+sys.path.append(os.path.dirname(os.path.realpath(__file__))+"/py_modules")
+
+import pyzmq
 
 logging.basicConfig(filename="/tmp/sdh-ds3-savebackup.log",
                     format='%(asctime)s %(levelname)s %(message)s',
@@ -75,5 +80,8 @@ class Plugin:
 
     # Asyncio-compatible long-running code, executed in a task when the plugin is loaded
     async def _main(self):
-        logger.info("Dard Souls 3 Save Backup Plugin is running.")
+        logger.info("Dark Souls 3 Save Backup Plugin is running.")
         _load_config()
+    
+    async def _unload(self):
+        logger.info("DS3 Savebackup is unloading.")

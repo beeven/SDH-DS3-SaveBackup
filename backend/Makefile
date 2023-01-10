@@ -6,9 +6,9 @@ all: hello
 # This rule tells make how to build hello from hello.cpp
 hello:
 	mkdir -p ./out
-	gcc -o ./out/hello ./src/main.c 
+	dotnet publish ./src/backend.csproj -c Release -r linux-x64 --self-contained --output ./out/ -p:PublishSingleFile=True 
 
 # This rule tells make to delete hello and hello.o
 .PHONY: clean 
 clean:
-	rm -f hello
+	rm -rf ./out
