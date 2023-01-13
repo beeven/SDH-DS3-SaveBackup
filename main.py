@@ -1,11 +1,13 @@
 from genericpath import isfile
 import logging
+from multiprocessing.managers import ListProxy
 import os, os.path
 import shutil
 import json
 import datetime
 import sys
 import subprocess
+import multiprocessing
 
 
 py_modules_folder = os.path.dirname(os.path.realpath(__file__))+"/py_modules"
@@ -38,7 +40,9 @@ INITIALIZED = False
 
 SLOT_CONFIG = {}
 plugin_proc: subprocess.Popen = None
-status = ""
+manager = multiprocessing.Manager()
+status_list = manager.list([])
+update_status_process: multiprocessing.Process = None
 
 def _load_config():
     global SLOT_CONFIG
@@ -57,8 +61,25 @@ def _save_config():
         json.dump(SLOT_CONFIG, f, ensure_ascii=False)
 
 
-def poll_status():
-    pass
+def invoke_plugin(command:str, status_lines:ListProxy):
+    ctx = zmq.Context()
+    zsock = ctx.socket(zmq.PULL)
+    zport = zsock.bind_to_random_port("tcp://127.0.0.1")
+    plugin_proc = subprocess.Popen([os.path.dirname(os.path.realpath(__file__))+"/bin/ds3-savebackup-onedrive","--port",str(zport),command])
+    del status_lines[:]
+
+    while plugin_proc.poll() is None:
+        msg = zsock.recv_string()
+        status_lines.append(msg)
+        if msg == "done":
+            break
+    zsock.close()
+    ctx.destroy()
+    plugin_proc.wait()
+    outs,errs = plugin_proc.communicate()
+    print(outs)
+    print("plugin exited.")
+    
 
 class Plugin:
 
@@ -119,49 +140,29 @@ class Plugin:
             return ""
 
     async def upload(self):
-        global plugin_proc, status
+        global update_status_process
         logger.info("Upload called.")
-        if plugin_proc is not None and plugin_proc.poll() is None:
-            plugin_proc.kill()
+        if update_status_process is not None:
+            if update_status_process.is_alive():
+                update_status_process.terminate()
+        update_status_process = multiprocessing.Process(target=invoke_plugin, args=("upload",status_list))
+        update_status_process.start()
+        return update_status_process.pid
 
-        ctx = zmq.Context()
-        zsock = ctx.socket(zmq.PULL)
-        zport = zsock.bind_to_random_port("tcp://127.0.0.1")
-        plugin_proc = subprocess.Popen([os.path.dirname(os.path.realpath(__file__))+"/bin/ds3-savebackup-onedrive","--port",str(zport),"upload"], stdout=subprocess.PIPE)
-        status = ""
-
-        while plugin_proc.poll() is None:
-            msg = zsock.recv_string()
-            if msg == "done":
-                break
-            status += "\n" + msg
-        status += "\ndone"
-        zsock.close()
-        ctx.destroy()
-    
     async def download(self):
         global plugin_proc, status
         logger.info("Download called.")
-        if plugin_proc is not None and plugin_proc.poll() is None:
-            plugin_proc.kill()
-
-        ctx = zmq.Context()
-        zsock = ctx.socket(zmq.PULL)
-        zport = zsock.bind_to_random_port("tcp://127.0.0.1")
-        plugin_proc = subprocess.Popen([os.path.dirname(os.path.realpath(__file__))+"/bin/ds3-savebackup-onedrive","--port",str(zport),"download"], stdout=subprocess.PIPE)
-        status = ""
-
-        while plugin_proc.poll() is None:
-            msg = zsock.recv_string()
-            if msg == "done":
-                break
-            status += "\n" + msg
-        status += "\ndone"
-        zsock.close()
-        ctx.destroy()
+        if update_status_process is not None:
+            if update_status_process.is_alive():
+                update_status_process.terminate()
+        update_status_process = multiprocessing.Process(target=invoke_plugin, args=("download",status_list))
+        update_status_process.start()
+        return update_status_process.pid
 
     async def get_status(self):
-        return status
+        while len(status_list) > 30:
+            status_list.pop(0)
+        return "\n".join(status_list)
         
 
     async def check_login_status(self):

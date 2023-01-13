@@ -7,6 +7,8 @@ using System.Text.Json;
 using System.IO.Pipes;
 using NetMQ;
 using NetMQ.Sockets;
+using System.Collections.Concurrent;
+
 public class Program
 {
     private static async Task<int> Main(string[] args)
@@ -229,12 +231,18 @@ public class Program
 
                     var fileUploadTask = new LargeFileUploadTask<DriveItem>(uploadSession, fs);
                     var totalLength = fs.Length;
+                    var msgToSend = new BlockingCollection<string>();
                     IProgress<long> progress = new Progress<long>(prog =>
                     {
                         System.Console.WriteLine($"Uploaded {prog} bytes of {totalLength} bytes");
-                        sock.SendFrame($"Uploaded {prog} bytes of {totalLength} bytes");
+                        msgToSend.Add($"Uploaded {prog} bytes of {totalLength} bytes");
                     });
-                    var uploadResult = await fileUploadTask.UploadAsync(progress);
+                    var uploadTask = fileUploadTask.UploadAsync(progress);
+                    while(!uploadTask.IsCompleted)
+                    {
+                        var msg = msgToSend.Take();
+                        sock.SendFrame(msg);
+                    }
 
                     //var resp = await graphClient.Me.Drive.Root.ItemWithPath(config.CloudFolder + "\\" + name).
                     System.Console.WriteLine($"Upload completed.");
@@ -297,9 +305,6 @@ public class Program
                 return;
             }
 
-            
-
-
             var graphClient = new GraphServiceClient(new DelegateAuthenticationProvider((requestMessage) =>
             {
                 requestMessage.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("bearer", result?.AccessToken);
@@ -359,7 +364,7 @@ public class Program
             }
             catch (MsalUiRequiredException ex)
             {
-                Console.Error.Write("No log in.");
+                Console.Error.Write($"No log in: {ex.Message}");
                 context.ExitCode = 1;
             }
 

@@ -138,18 +138,18 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
   );
 };
 
-const CloudServicePlugin: VFC<{serverAPI: ServerAPI}> = ({serverAPI}) => {
-  
-  const [ status, setStatus ] = useState<string | null>(null);
-  const [ btnDisabled, setBtnDisabled ] = useState<boolean>(false);
+const CloudServicePlugin: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
 
-  const onSignInClicked = async ()=>{
-    serverAPI.callPluginMethod<any,string>("signin",{}).then(result=>{
+  const [status, setStatus] = useState<string | null>(null);
+  const [btnDisabled, setBtnDisabled] = useState<boolean>(false);
+
+  const onSignInClicked = async () => {
+    serverAPI.callPluginMethod<any, string>("signin", {}).then(result => {
       console.log(result)
-      if(result.success) {
+      if (result.success) {
         let uri = result.result;
         console.log(uri)
-        if(uri != "") {
+        if (uri != "") {
           Router.NavigateToExternalWeb(uri);
         }
       }
@@ -158,32 +158,50 @@ const CloudServicePlugin: VFC<{serverAPI: ServerAPI}> = ({serverAPI}) => {
 
 
 
-  const onUploadClicked = async ()=>{
+  const onUploadClicked = async () => {
     setBtnDisabled(true);
-    serverAPI.callPluginMethod<any, string>("upload",{}).then(result=>{
+    setPollStatus(true);
+    serverAPI.callPluginMethod<any, string>("upload", {}).then(result => {
       console.log(result);
-      setBtnDisabled(false);
+      // setBtnDisabled(false);
     });
   }
 
-  const onDownloadClicked = async ()=>{
+  const onDownloadClicked = async () => {
     setBtnDisabled(true);
-    serverAPI.callPluginMethod<any,string>("download",{}).then(result=>{
+    setPollStatus(true);
+    serverAPI.callPluginMethod<any, string>("download", {}).then(result => {
       console.log(result);
-      setBtnDisabled(false);
+      // setBtnDisabled(false);
     });
   }
 
-  useEffect(()=>{
-    const interval = setInterval(()=>{
-      serverAPI.callPluginMethod<any,string>("get_status",{}).then(result=>{
-        if(result.success) {
-          setStatus(result.result);
-        }
-      })
-    },2000);
-    return () => clearInterval(interval);
-  },[]);
+  const [pollStatus, setPollStatus] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (pollStatus) {
+      const interval = setInterval(() => {
+        serverAPI.callPluginMethod<any, string>("get_status", {}).then(result => {
+          if (result.success) {
+            setStatus(result.result);
+            let strs = result.result.split("\n");
+            let s = strs.pop();
+            if (s == "done") {
+              setPollStatus(false);
+              setBtnDisabled(false);
+            }
+          }
+          else {
+            setPollStatus(false);
+            setBtnDisabled(false);
+          }
+        })
+      }, 3000);
+      return () => clearInterval(interval);
+    } else {
+      return () => { };
+    }
+  }, [pollStatus]);
 
   return (
     <div style={{ marginTop: "50px", color: "white" }}>
@@ -193,13 +211,13 @@ const CloudServicePlugin: VFC<{serverAPI: ServerAPI}> = ({serverAPI}) => {
         <pre>{status}</pre>
       </div>
 
-      <DialogButton onClick={() => onSignInClicked() }>
+      <DialogButton onClick={() => onSignInClicked()}>
         Sign in Microsoft
       </DialogButton>
-      <DialogButton onClick={()=>onUploadClicked()} disabled={btnDisabled}>
+      <DialogButton onClick={() => onUploadClicked()} disabled={btnDisabled}>
         Upload
       </DialogButton>
-      <DialogButton onClick={()=>onDownloadClicked()} disabled={btnDisabled}>
+      <DialogButton onClick={() => onDownloadClicked()} disabled={btnDisabled}>
         Download
       </DialogButton>
     </div>
@@ -207,7 +225,7 @@ const CloudServicePlugin: VFC<{serverAPI: ServerAPI}> = ({serverAPI}) => {
 };
 
 export default definePlugin((serverApi: ServerAPI) => {
-  serverApi.routerHook.addRoute("/sdh-ds3-savebackup-cloud", ()=>{
+  serverApi.routerHook.addRoute("/sdh-ds3-savebackup-cloud", () => {
     return <CloudServicePlugin serverAPI={serverApi}></CloudServicePlugin>
   }, {
     exact: true
