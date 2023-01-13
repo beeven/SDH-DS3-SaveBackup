@@ -1,0 +1,6 @@
+[MASTER]
+init-hook='import sys; sys.path.append("./py_modules")'
+
+[MESSAGES CONTROL]
+disable=
+    wrong-import-position

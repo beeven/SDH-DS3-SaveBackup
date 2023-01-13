@@ -1,10 +1,10 @@
 {
   "name": "DS3 SaveBackup",
-  "author": "John Doe",
-  "flags": ["debug", "_root"],
+  "author": "Beeven Yip",
+  "flags": ["debug"],
   "publish": {
-    "tags": ["template", "root"],
-    "description": "Decky example plugin.",
+    "tags": ["template"],
+    "description": "DarkSouls3 Save Backup",
     "image": "https://opengraph.githubassets.com/1/SteamDeckHomebrew/PluginLoader"
   }
 }

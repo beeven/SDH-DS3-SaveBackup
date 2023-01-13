@@ -6,7 +6,7 @@ all: hello
 # This rule tells make how to build hello from hello.cpp
 hello:
 	mkdir -p ./out
-	dotnet publish ./src/backend.csproj -c Release -r linux-x64 --self-contained --output ./out/ -p:PublishSingleFile=True 
+	dotnet publish ./src/ds3-savebackup-onedrive.csproj -c Release -r linux-x64 --self-contained --output ./out/ -p:PublishSingleFile=True 
 
 # This rule tells make to delete hello and hello.o
 .PHONY: clean 

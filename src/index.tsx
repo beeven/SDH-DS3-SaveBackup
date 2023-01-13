@@ -2,14 +2,14 @@ import {
   ButtonItem,
   definePlugin,
   //DialogButton,
-
   PanelSection,
   PanelSectionRow,
-  //Router,
   ServerAPI,
   staticClasses,
   DropdownItem,
-  DropdownOption
+  DropdownOption,
+  Router,
+  DialogButton
 } from "decky-frontend-lib";
 import { VFC, useState, useEffect, useMemo } from "react";
 import { FaDragon } from "react-icons/fa";
@@ -40,9 +40,8 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
     );
     if (result.success) {
       setStatusText(result.result);
-      const configresult = await serverAPI.callPluginMethod<any,SlotConfig>("get_slot_config",{});
-      if(configresult.success)
-      {
+      const configresult = await serverAPI.callPluginMethod<any, SlotConfig>("get_slot_config", {});
+      if (configresult.success) {
         setSlotConfig(configresult.result);
       }
     }
@@ -51,48 +50,46 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
   const [slotConfig, setSlotConfig] = useState<SlotConfig | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
 
-  const onSelectionChange = async (slot: number) =>{
+  const onSelectionChange = async (slot: number) => {
     setSelectedSlot(slot);
-    await serverAPI.callPluginMethod("select_slot",{ slot: slot })
+    await serverAPI.callPluginMethod("select_slot", { slot: slot })
   }
 
-  useEffect(()=>{
-  serverAPI.callPluginMethod<any,SlotConfig>("get_slot_config", {}).then(result =>{
-    if(result.success) {
-      setSlotConfig(result.result);
-      setSelectedSlot(result.result.selectedSlot);
-    }
-  });
-}, []);
+  useEffect(() => {
+    serverAPI.callPluginMethod<any, SlotConfig>("get_slot_config", {}).then(result => {
+      if (result.success) {
+        setSlotConfig(result.result);
+        setSelectedSlot(result.result.selectedSlot);
+      }
+    });
+  }, []);
 
   const slotOptions = useMemo(
     (): DropdownOption[] => {
       let slotCount = slotConfig?.slots?.length;
-      if(slotCount != null && typeof(slotCount) != 'undefined') {
+      if (slotCount != null && typeof (slotCount) != 'undefined') {
         let slots = [];
-        for(let i=0; i<slotCount; i++)
-        {
+        for (let i = 0; i < slotCount; i++) {
           let timestamp = slotConfig?.slots[i]?.lastModified;
-          if(timestamp === null || typeof(timestamp) === "undefined")
-          {
+          if (timestamp === null || typeof (timestamp) === "undefined") {
             timestamp = "Empty"
           }
-          let entry = {data: i+1, label: (i+1).toString() + " " +  timestamp};
+          let entry = { data: i + 1, label: (i + 1).toString() + " " + timestamp };
           slots.push(entry)
         }
         return slots;
       }
       else {
         return [
-          { data: 1, label: "1 Empty"},
-          { data: 2, label: "2 Empty"},
-          { data: 3, label: "3 Empty"},
+          { data: 1, label: "1 Empty" },
+          { data: 2, label: "2 Empty" },
+          { data: 3, label: "3 Empty" },
         ]
       }
     },
     [slotConfig]
   );
-  
+
 
   return (
     <PanelSection title="Save Backup">
@@ -117,34 +114,104 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
         <div>{statusText}</div>
       </PanelSectionRow>
       <PanelSectionRow>
-        <DropdownItem 
-          label = "Save Slot #"
+        <DropdownItem
+          label="Save Slot #"
           menuLabel="Slot #"
           strDefaultLabel="Select a slot"
           rgOptions={slotOptions}
-          selectedOption = {selectedSlot}
+          selectedOption={selectedSlot}
           onChange={(data) => onSelectionChange(data.data)}
         />
       </PanelSectionRow>
+
+      <PanelSectionRow>
+        <ButtonItem
+          layout="below"
+          onClick={() => {
+            Router.CloseSideMenus();
+            Router.Navigate("/sdh-ds3-savebackup-cloud");
+          }}
+        >Open Cloud Service</ButtonItem>
+      </PanelSectionRow>
+
     </PanelSection>
   );
 };
 
-// const DeckyPluginRouterTest: VFC = () => {
-//   return (
-//     <div style={{ marginTop: "50px", color: "white" }}>
-//       Hello World!
-//       <DialogButton onClick={() => Router.NavigateToStore()}>
-//         Go to Store
-//       </DialogButton>
-//     </div>
-//   );
-// };
+const CloudServicePlugin: VFC<{serverAPI: ServerAPI}> = ({serverAPI}) => {
+  
+  const [ status, setStatus ] = useState<string | null>(null);
+  const [ btnDisabled, setBtnDisabled ] = useState<boolean>(false);
+
+  const onSignInClicked = async ()=>{
+    serverAPI.callPluginMethod<any,string>("signin",{}).then(result=>{
+      console.log(result)
+      if(result.success) {
+        let uri = result.result;
+        console.log(uri)
+        if(uri != "") {
+          Router.NavigateToExternalWeb(uri);
+        }
+      }
+    });
+  }
+
+
+
+  const onUploadClicked = async ()=>{
+    setBtnDisabled(true);
+    serverAPI.callPluginMethod<any, string>("upload",{}).then(result=>{
+      console.log(result);
+      setBtnDisabled(false);
+    });
+  }
+
+  const onDownloadClicked = async ()=>{
+    setBtnDisabled(true);
+    serverAPI.callPluginMethod<any,string>("download",{}).then(result=>{
+      console.log(result);
+      setBtnDisabled(false);
+    });
+  }
+
+  useEffect(()=>{
+    const interval = setInterval(()=>{
+      serverAPI.callPluginMethod<any,string>("get_status",{}).then(result=>{
+        if(result.success) {
+          setStatus(result.result);
+        }
+      })
+    },2000);
+    return () => clearInterval(interval);
+  },[]);
+
+  return (
+    <div style={{ marginTop: "50px", color: "white" }}>
+
+      <div>Status:</div>
+      <div>
+        <pre>{status}</pre>
+      </div>
+
+      <DialogButton onClick={() => onSignInClicked() }>
+        Sign in Microsoft
+      </DialogButton>
+      <DialogButton onClick={()=>onUploadClicked()} disabled={btnDisabled}>
+        Upload
+      </DialogButton>
+      <DialogButton onClick={()=>onDownloadClicked()} disabled={btnDisabled}>
+        Download
+      </DialogButton>
+    </div>
+  );
+};
 
 export default definePlugin((serverApi: ServerAPI) => {
-  // serverApi.routerHook.addRoute("/decky-plugin-test", DeckyPluginRouterTest, {
-  //   exact: true,
-  // });
+  serverApi.routerHook.addRoute("/sdh-ds3-savebackup-cloud", ()=>{
+    return <CloudServicePlugin serverAPI={serverApi}></CloudServicePlugin>
+  }, {
+    exact: true
+  });
 
 
   return {
@@ -152,7 +219,7 @@ export default definePlugin((serverApi: ServerAPI) => {
     content: <Content serverAPI={serverApi} />,
     icon: <FaDragon />,
     onDismount() {
-      //serverApi.routerHook.removeRoute("/decky-plugin-test");
+      serverApi.routerHook.removeRoute("/sdh-ds3-savebackup-cloud");
     },
   };
 });
