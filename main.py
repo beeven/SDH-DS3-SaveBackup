@@ -143,17 +143,21 @@ class Plugin:
         global update_status_process
         logger.info("Upload called.")
         if update_status_process is not None:
+            logger.info("previous plugin process exists.")
             if update_status_process.is_alive():
+                logger.info("previous plugin process is alive. Terminating...")
                 update_status_process.terminate()
         update_status_process = multiprocessing.Process(target=invoke_plugin, args=("upload",status_list))
         update_status_process.start()
         return update_status_process.pid
 
     async def download(self):
-        global plugin_proc, status
+        global update_status_process
         logger.info("Download called.")
         if update_status_process is not None:
+            logger.info("previous plugin process exists.")
             if update_status_process.is_alive():
+                logger.info("previous plugin process is alive. Terminating...")
                 update_status_process.terminate()
         update_status_process = multiprocessing.Process(target=invoke_plugin, args=("download",status_list))
         update_status_process.start()

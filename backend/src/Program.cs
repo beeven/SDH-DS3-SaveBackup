@@ -23,7 +23,7 @@ public class Program
         var zmqPortOption = new Option<int>(
             name: "--port",
             description: "The port zmq to connect.",
-            getDefaultValue: () => 5556
+            getDefaultValue: () => 0
         );
 
         //configFileOption.SetDefaultValue("appsettings.json");
@@ -74,13 +74,18 @@ public class Program
             AuthenticationResult? result = null;
             string? ErrorMessage = null;
 
-            using var sock = new NetMQ.Sockets.RequestSocket("tcp://127.0.0.1:" + port.ToString());
+            NetMQ.Sockets.RequestSocket? sock = null;
+
+            if (port > 0 && port < 65536)
+            {
+                sock = new NetMQ.Sockets.RequestSocket("tcp://127.0.0.1:" + port.ToString());
+            }
 
             try
             {
                 result = await app.AcquireTokenSilent(config.Scopes, accounts.FirstOrDefault()).ExecuteAsync();
                 //Console.WriteLine(@$"Acquired token silently.");
-                sock.SendFrame(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes<AuthResult>(new AuthResult
+                sock?.SendFrame(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes<AuthResult>(new AuthResult
                 {
                     Ok = true,
                     DisplayName = result.Account.Username,
@@ -99,29 +104,6 @@ public class Program
                 result = await app.AcquireTokenInteractive(config.Scopes)
                                     .WithSystemWebViewOptions(GetCustomHTML(sock))
                                     .ExecuteAsync();
-
-
-
-                // result = await app.AcquireTokenWithDeviceCode(config.Scopes, (deviceCodeResult) =>
-                // {
-                //     //System.Console.WriteLine($"Device code: {deviceCodeResult.DeviceCode}");
-                //     var res = new AuthResult
-                //     {
-                //         Ok = false,
-                //         LoginInfo = new AuthInfo
-                //         {
-                //             UserCode = deviceCodeResult.UserCode,
-                //             VerificationUrl = deviceCodeResult.VerificationUrl,
-                //             Message = deviceCodeResult.Message
-                //         }
-                //     };
-                //     System.Console.WriteLine(JsonSerializer.Serialize(res, new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull }));
-
-
-                //     return Task.FromResult(0);
-                // }).ExecuteAsync();
-                // result = await app.AcquireTokenInteractive(scopes)
-                //     .ExecuteAsync();
             }
             catch (OperationCanceledException ex)
             {
@@ -148,19 +130,28 @@ public class Program
                     Error = ErrorMessage ?? "Authentication failed."
                 };
                 System.Console.WriteLine(JsonSerializer.Serialize(res, new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull }));
-                sock.SendFrame(ErrorMessage ?? "Authentication failed.");
-                sock.SendFrame("done");
+                sock?.SendFrame(ErrorMessage ?? "Authentication failed.");
                 context.ExitCode = 1;
-                return;
+            }
+            else
+            {
+
+                System.Console.WriteLine(JsonSerializer.Serialize(new AuthResult
+                {
+                    Ok = true,
+                    DisplayName = result.Account.Username,
+                    Id = result.UniqueId
+                }, new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull }));
             }
 
-            System.Console.WriteLine(JsonSerializer.Serialize(new AuthResult
+            sock?.SendFrame("done");
+
+            if (sock is not null)
             {
-                Ok = true,
-                DisplayName = result.Account.Username,
-                Id = result.UniqueId
-            }, new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull }));
-            sock.SendFrame("done");
+                sock.Close();
+                sock.Dispose();
+            }
+
         });
 
 
@@ -199,9 +190,9 @@ public class Program
                 sock.SendFrame(ex.Message);
                 sock.SendFrame("done");
                 Console.Error.WriteLine("Login Required: {0}", ex.Message);
-                
+
                 context.ExitCode = 1;
-                
+
                 return;
             }
 
@@ -212,42 +203,65 @@ public class Program
             }));
             try
             {
-                foreach (var filename in System.IO.Directory.GetFiles(config.LocalFolder))
+                var msgToSend = new BlockingCollection<string>();
+
+                var uploadTask = Task.Run(async () =>
                 {
-                    System.Console.WriteLine($"Uploading {filename}");
-                    sock.SendFrame($"Uploading {filename}");
-                    var name = System.IO.Path.GetFileName(filename);
-                    using var fs = System.IO.File.OpenRead(filename);
+                    foreach (var filename in System.IO.Directory.GetFiles(config.LocalFolder))
+                    {
+                        var fn = System.IO.Path.GetFileName(filename);
+                        System.Console.WriteLine($"Uploading {fn}");
+                        sock.SendFrame($"Uploading {fn}");
+                        var name = System.IO.Path.GetFileName(filename);
+                        using var fs = System.IO.File.OpenRead(filename);
 
-                    var uploadSession = await graphClient.Me.Drive.Root.ItemWithPath(config.CloudFolder + "\\" + name)
-                        .CreateUploadSession(new DriveItemUploadableProperties
-                        {
-                            AdditionalData = new Dictionary<string, object>
+                        var uploadSession = await graphClient.Me.Drive.Root.ItemWithPath(config.CloudFolder + "\\" + name)
+                            .CreateUploadSession(new DriveItemUploadableProperties
                             {
-                                {"@microsoft.graph.conflictBehavior", "replace"}
-                            }
-                        }).Request().PostAsync();
+                                AdditionalData = new Dictionary<string, object>
+                                {
+                                    {"@microsoft.graph.conflictBehavior", "replace"}
+                                }
+                            }).Request().PostAsync();
 
+                        var fileUploadTask = new LargeFileUploadTask<DriveItem>(uploadSession, fs);
+                        var totalLength = fs.Length;
 
-                    var fileUploadTask = new LargeFileUploadTask<DriveItem>(uploadSession, fs);
-                    var totalLength = fs.Length;
-                    var msgToSend = new BlockingCollection<string>();
-                    IProgress<long> progress = new Progress<long>(prog =>
-                    {
-                        System.Console.WriteLine($"Uploaded {prog} bytes of {totalLength} bytes");
-                        msgToSend.Add($"Uploaded {prog} bytes of {totalLength} bytes");
-                    });
-                    var uploadTask = fileUploadTask.UploadAsync(progress);
-                    while(!uploadTask.IsCompleted)
-                    {
-                        var msg = msgToSend.Take();
-                        sock.SendFrame(msg);
+                        IProgress<long> progress = new Progress<long>(prog =>
+                        {
+                            System.Console.WriteLine($"Uploaded {prog} bytes of {totalLength} bytes");
+                            msgToSend.Add($"Uploaded {prog} bytes of {totalLength} bytes");
+                        });
+
+                        await fileUploadTask.UploadAsync(progress);
+
+                        System.Console.WriteLine($"Upload completed.");
+                        sock.SendFrame("Upload completed.");
                     }
+                }).ContinueWith(async (t) =>
+                {
+                    await t;
+                    msgToSend.Add("done");
+                    msgToSend.CompleteAdding();
+                });
 
-                    //var resp = await graphClient.Me.Drive.Root.ItemWithPath(config.CloudFolder + "\\" + name).
-                    System.Console.WriteLine($"Upload completed.");
-                    sock.SendFrame("Upload completed.");
-                }
+                var sendMsgTask = Task.Run(() =>
+                {
+                    while (!msgToSend.IsAddingCompleted)
+                    {
+                        if (msgToSend.TryTake(out string? msg, TimeSpan.FromSeconds(1)))
+                        {
+                            if (msg is not null)
+                            {
+                                sock.SendFrame(msg);
+                            }
+                        }
+                    }
+                });
+
+                await Task.WhenAll(uploadTask, sendMsgTask);
+
+                //var resp = await graphClient.Me.Drive.Root.ItemWithPath(config.CloudFolder + "\\" + name).
 
             }
             catch (ServiceException ex)
@@ -264,15 +278,19 @@ public class Program
 
 
 
-
-
         downloadCommand.SetHandler(async (context) =>
         {
             var configFile = context.ParseResult.GetValueForOption(configFileOption);
             var config = ParseConfig(configFile);
             var port = context.ParseResult.GetValueForOption(zmqPortOption);
 
-            using var sock = new PushSocket("tcp://localhost:" + port.ToString());
+            PushSocket? sock = null;
+
+            if (port > 0 && port < 65536)
+            {
+                sock = new PushSocket("tcp://localhost:" + port.ToString());
+            }
+
 
             var app = PublicClientApplicationBuilder.Create(config.ClientId)
             .WithRedirectUri("http://localhost")
@@ -300,8 +318,8 @@ public class Program
             {
                 Console.Error.WriteLine("Login Required: {0}", ex.Message);
                 context.ExitCode = 1;
-                sock.SendFrame("Login required.");
-                sock.SendFrame("done");
+                sock?.SendFrame("Login required.");
+                sock?.SendFrame("done");
                 return;
             }
 
@@ -315,21 +333,26 @@ public class Program
                 var items = await graphClient.Me.Drive.Root.ItemWithPath(config.CloudFolder).Children.Request().GetAsync();
                 foreach (var item in items.Where(x => x.File != null))
                 {
-                    System.Console.Write(item.Name);
+                    System.Console.Write($"Downloading {item.Name}...");
+                    sock?.SendFrame($"Downloading {item.Name}...");
                     using var content = await graphClient.Me.Drive.Items[item.Id].Content.Request().GetAsync();
                     await content.CopyToAsync(new FileStream(System.IO.Path.Combine(config.LocalFolder, item.Name), FileMode.Create, FileAccess.Write));
                     System.Console.WriteLine("\tdownloaded.");
-                    sock.SendFrame($"{item.Name} downloaded.");
-                    
+                    sock?.SendFrame($"{item.Name} downloaded.");
                 }
             }
             catch (ServiceException ex)
             {
                 Console.Error.WriteLine(ex.Message);
-                sock.SendFrame(ex.Message);
+                sock?.SendFrame(ex.Message);
                 context.ExitCode = 1;
             }
-            sock.SendFrame("done");
+            sock?.SendFrame("done");
+            if(sock is not null)
+            {
+                sock.Close();
+                sock.Dispose();
+            }
         });
 
 
@@ -402,7 +425,7 @@ public class Program
 
 
 
-    private static SystemWebViewOptions GetCustomHTML(NetMQ.Sockets.RequestSocket socket)
+    private static SystemWebViewOptions GetCustomHTML(NetMQ.Sockets.RequestSocket? socket)
     {
         return new SystemWebViewOptions
         {
@@ -441,7 +464,7 @@ public class Program
 
                 System.Console.WriteLine($"Please open browser with uri to sign in: {uri}");
 
-                socket.SendFrame(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes<AuthResult>(new AuthResult
+                socket?.SendFrame(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes<AuthResult>(new AuthResult
                 {
                     Ok = false,
                     LoginInfo = new AuthInfo
